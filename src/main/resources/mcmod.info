@@ -1,0 +1,16 @@
+[
+{
+  "modid": "draconicalchemy",
+  "name": "Draconic Alchemy",
+  "description": "Addon to Draconic Evolution that offers new in world crafting mechanics to pack makers",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["CleanroomMC"],
+  "credits": "Authors of this project",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
