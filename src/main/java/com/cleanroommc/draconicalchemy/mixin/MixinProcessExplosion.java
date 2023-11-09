@@ -1,6 +1,5 @@
 package com.cleanroommc.draconicalchemy.mixin;
 
-import com.brandon3055.brandonscore.handlers.IProcess;
 import com.brandon3055.brandonscore.lib.DelayedExecutor;
 import com.brandon3055.brandonscore.lib.ShortPos;
 import com.brandon3055.brandonscore.lib.Vec3D;
@@ -11,21 +10,20 @@ import com.brandon3055.draconicevolution.blocks.reactor.ProcessExplosion;
 import com.brandon3055.draconicevolution.lib.ExplosionHelper;
 import com.brandon3055.draconicevolution.network.PacketExplosionFX;
 import com.brandon3055.draconicevolution.utils.LogHelper;
+import com.cleanroommc.draconicalchemy.alchemy.AlchemyRegistry;
+import com.cleanroommc.draconicalchemy.alchemy.BlastWave;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
-import net.minecraft.init.Blocks;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.WorldServer;
-import net.minecraftforge.fluids.Fluid;
-import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.IFluidBlock;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import org.spongepowered.asm.mixin.Final;
@@ -36,7 +34,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -99,13 +96,26 @@ public abstract class MixinProcessExplosion {
     @Shadow
     private IBlockState lavaState;
 
-
+    public HashSet<Integer>[] depositionPosition;
+    private double[][] waveTypes;
+    private int[] activeAngularWaves;
+    private int activeWave;
 
     @Inject(method = "<init>", at = @At("RETURN"))
     protected void overrideFluid(BlockPos origin, int radius, WorldServer world, int minimumDelayTime, CallbackInfo ci) {
         //angularResistance = null;
         //angularResistance = new double[121];
         minimumDelay = 0;
+        waveTypes = new double[121][AlchemyRegistry.numWaves()];
+        depositionPosition = new HashSet[AlchemyRegistry.numWaves()];
+        for (int i = 0; i < AlchemyRegistry.numWaves(); i++) {
+            depositionPosition[i] = new HashSet<>();
+        }
+
+        for (int i = 0; i<waveTypes.length; i++) {
+            waveTypes[i][0] = 1.0d;
+        }
+        activeAngularWaves = new int[121];
     }
     /**
      * @author
@@ -174,6 +184,9 @@ public abstract class MixinProcessExplosion {
                     double sim = SimplexNoise.noise(x / 50D, z / 50D);
                     edgeNoise = 1 + (Math.abs(sim) * edgeNoise * 8);
 
+                    //set the active blast wave
+                    activeWave = getActiveBlastWave(radialAngle);
+
                     double power = (10000 * radialPos * radialPos * radialPos * angularLoad * edgeNoise) + edgeScatter;
                     double heightUp = 20 + ((5D + (radius / 10D)) * angularLoad);
                     double heightDown = coreHeight + ((5D + (radius / 10D)) * angularLoad * (1 - coreFalloff));
@@ -228,6 +241,25 @@ public abstract class MixinProcessExplosion {
         return ((theta / (Math.PI * 2)) * (double) angularResistance.length);
     }
 
+    //Get the index of the active blast wave
+    public int getActiveBlastWave(double radialPos) {
+        int min = MathHelper.floor(radialPos);
+        if (min >= angularResistance.length) {
+            min -= angularResistance.length;
+        }
+        int max = MathHelper.ceil(radialPos);
+        if (max >= angularResistance.length) {
+            max -= angularResistance.length;
+        }
+
+        double delta = radialPos - min;
+        if (world.rand.nextDouble() > delta) {
+            return activeAngularWaves[max];
+        } else {
+            return activeAngularWaves[min];
+        }
+    }
+
     public double getRadialResistance(double radialPos) {
         int min = MathHelper.floor(radialPos);
         if (min >= angularResistance.length) {
@@ -260,7 +292,11 @@ public abstract class MixinProcessExplosion {
     }
 
     //endregion
-
+    /**
+     * @author
+     * @reason
+     */
+    @Overwrite
     private double trace(Vec3D posVec, double power, int dist, int traceDir, double totalResist, int travel) {
         if (dist > 100) {
             dist = 100;
@@ -322,13 +358,11 @@ public abstract class MixinProcessExplosion {
         totalResist += r;
         power -= r;
 
-        if (dist == 1 && traceDir == -1 && lava && world.rand.nextInt(250) == 0 && !world.isAirBlock(pos.down())) {
+        //Add deposition to depositions list
+        if (dist == 1 && traceDir == -1 && !world.isAirBlock(pos.down())) {
             dist = 0;
-            if (destroyedCache.contains(iPos)) {
-                destroyedCache.remove(iPos);
-            }
-//            world.setBlockState(pos, lavaState);
-            lavaPositions.add(iPos);
+            destroyedCache.remove(iPos);
+            depositionPosition[activeAngularWaves[activeWave]].add(iPos);
             blocksToUpdate.add(iPos);
             scannedCache.add(iPos);
         }
@@ -349,6 +383,7 @@ public abstract class MixinProcessExplosion {
      *
      * @return false if calculation is not yet complete or detonation has already occurred.
      */
+    @Overwrite
     public boolean detonate() {
         if (!isCalculationComplete() || detonated) {
             return false;
@@ -367,8 +402,11 @@ public abstract class MixinProcessExplosion {
         LogHelper.stopTimer();
         LogHelper.startTimer("Adding Lava");
 
-        for (Integer pos : lavaPositions) {
-            world.setBlockState(shortPos.getActualPos(pos), lavaState);
+        //process depositions
+        for (int wave = 0; wave < AlchemyRegistry.numWaves(); wave++) {
+            for (Integer pos : depositionPosition[wave]) {
+                world.setBlockState(shortPos.getActualPos(pos), AlchemyRegistry.waveTypes.get(i).getDeposition(world.rand));
+            }
         }
 
         LogHelper.stopTimer();
