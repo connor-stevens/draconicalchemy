@@ -40,7 +40,7 @@ public class RandomCollection<E> {
             if (!updated) {
                 update();
             }
-            int value = random.nextInt(total - 1);
+            int value = random.nextInt(total);
             return randomMap.higherEntry(value).getValue();
         } catch (Exception e) {
             return null;

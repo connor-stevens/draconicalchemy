@@ -101,6 +101,10 @@ repositories {
         name "ModMaven"
         url = "https://modmaven.dev"
     }
+    maven { // CraftTweaker
+        name 'jared maven'
+        url "https://maven.blamejared.com/"
+    }
 
     mavenLocal() // Must be last for caching to work
 }
@@ -129,6 +133,10 @@ dependencies {
     compileOnly rfg.deobf("mezz.jei:jei_1.12.2:4.16.1.302:api")
         // at runtime, use the full JEI jar
     runtimeOnly rfg.deobf("mezz.jei:jei_1.12.2:4.16.1.302")
+
+    compileOnly "CraftTweaker2:CraftTweaker2-API:4.1.8.9"
+    runtimeOnly "CraftTweaker2:CraftTweaker2-MC1120-Main:1.12-4.1.20.695"
+
 
     if (project.use_mixins.toBoolean()) {
         // Change your mixin refmap name here:

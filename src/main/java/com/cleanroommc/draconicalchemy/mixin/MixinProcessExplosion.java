@@ -12,6 +12,9 @@ import com.brandon3055.draconicevolution.network.PacketExplosionFX;
 import com.brandon3055.draconicevolution.utils.LogHelper;
 import com.cleanroommc.draconicalchemy.alchemy.AlchemyRegistry;
 import com.cleanroommc.draconicalchemy.alchemy.BlastWave;
+import com.cleanroommc.draconicalchemy.alchemy.Converter;
+import com.cleanroommc.draconicalchemy.alchemy.Reaction;
+import com.cleanroommc.draconicalchemy.util.Pair;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLiquid;
@@ -97,23 +100,28 @@ public abstract class MixinProcessExplosion {
     private IBlockState lavaState;
 
     public HashSet<Integer>[] depositionPosition;
-    private double[][] waveTypes;
+    public HashSet<Integer>[] reactionPosition;
+    private int[][] angularBlastWaveConversion;
+    private int[] blastWaveConversionBuffer;
     private int[] activeAngularWaves;
-    private int activeWave;
+    private int activeWaveID;
+
+    private BlastWave activeWave;
 
     @Inject(method = "<init>", at = @At("RETURN"))
     protected void overrideFluid(BlockPos origin, int radius, WorldServer world, int minimumDelayTime, CallbackInfo ci) {
         //angularResistance = null;
         //angularResistance = new double[121];
         minimumDelay = 0;
-        waveTypes = new double[121][AlchemyRegistry.numWaves()];
+        angularBlastWaveConversion = new int[121][AlchemyRegistry.numWaves()];
+        blastWaveConversionBuffer = new int[AlchemyRegistry.numWaves()];
         depositionPosition = new HashSet[AlchemyRegistry.numWaves()];
         for (int i = 0; i < AlchemyRegistry.numWaves(); i++) {
             depositionPosition[i] = new HashSet<>();
         }
-
-        for (int i = 0; i<waveTypes.length; i++) {
-            waveTypes[i][0] = 1.0d;
+       reactionPosition = new HashSet[AlchemyRegistry.numWaves()];
+        for (int i = 0; i < AlchemyRegistry.numWaves(); i++) {
+            reactionPosition[i] = new HashSet<>();
         }
         activeAngularWaves = new int[121];
     }
@@ -165,6 +173,8 @@ public abstract class MixinProcessExplosion {
 
         double maxCoreHeight = 20D * (maxRadius / 150D);
 
+        boolean debug = true;
+
         Vec3D posVecUp = new Vec3D();
         Vec3D posVecDown = new Vec3D();
         for (int x = originPos.getX() - radius; x < originPos.getX() + radius; x++) {
@@ -185,11 +195,12 @@ public abstract class MixinProcessExplosion {
                     edgeNoise = 1 + (Math.abs(sim) * edgeNoise * 8);
 
                     //set the active blast wave
-                    activeWave = getActiveBlastWave(radialAngle);
+                    activeWaveID = getActiveBlastWave(radialAngle);
+                    activeWave = AlchemyRegistry.waveTypes.get(activeWaveID);
 
                     double power = (10000 * radialPos * radialPos * radialPos * angularLoad * edgeNoise) + edgeScatter;
-                    double heightUp = 20 + ((5D + (radius / 10D)) * angularLoad);
-                    double heightDown = coreHeight + ((5D + (radius / 10D)) * angularLoad * (1 - coreFalloff));
+                    double heightUp = 20 + ((5D + (radius / 10d)) * angularLoad);
+                    double heightDown = coreHeight + ((5D + (radius / 10d)) * angularLoad * (1 - coreFalloff));
                     heightDown += (Math.abs(sim) * 4) + world.rand.nextDouble();
                     heightUp += (Math.abs(sim) * 4) + world.rand.nextDouble();
 
@@ -198,11 +209,17 @@ public abstract class MixinProcessExplosion {
                     resist += trace(posVecDown.subtract(0, 1, 0), power, (int) heightDown, -1, 0, 0);
                     resist *= 1 / angularLoad;
 
+
                     if (radialPos < 0.8) {
                         addRadialResistance(radialAngle, resist);
                     }
+
+                    if (debug) {
+                        LogHelper.dev("Radius: " + radius + " meanresist: " + meanResistance + " radialresist: " + radialResistance + " heightdown: " + heightDown + " angularLoad: " + angularLoad);
+                        debug = false;
+                    }
                 }
-            }
+             }
         }
 
         recalcResist();
@@ -231,6 +248,19 @@ public abstract class MixinProcessExplosion {
         meanResistance = total / angularResistance.length;
     }
 
+    private void smoothResist(int range) {
+        double[] smoothing = new double[121];
+        for (int i = 0; i < 121; i++) {
+            for (int j = -range; j < range; j++) {
+                smoothing[i] += angularResistance[Math.floorMod((i+j), 121)];
+            }
+            smoothing[i] /= 2 * range + 1;
+        }
+        for (int i = 0; i < 121; i++) {
+            angularResistance[i] = smoothing[i];
+        }
+    }
+
     public double getRadialAngle(Vec3D pos) {
         double theta = Math.atan2(pos.x - origin.x, origin.z - pos.z);
 
@@ -257,6 +287,31 @@ public abstract class MixinProcessExplosion {
             return activeAngularWaves[max];
         } else {
             return activeAngularWaves[min];
+        }
+    }
+
+    public void addBlastWaveConversionFactor(double radialPos, int waveType, int power) {
+        int min = MathHelper.floor(radialPos);
+        if (min >= angularResistance.length) {
+            min -= angularResistance.length;
+        }
+        int max = MathHelper.ceil(radialPos);
+        if (max >= angularResistance.length) {
+            max -= angularResistance.length;
+        }
+
+        double delta = radialPos - min;
+
+        angularBlastWaveConversion[min][waveType] += angularBlastWaveConversion[min][waveType] + power * (1-delta);
+        if (angularBlastWaveConversion[min][waveType] > 100) {
+            angularBlastWaveConversion[min][waveType] = 0;
+            activeAngularWaves[min] = waveType;
+        }
+
+        angularBlastWaveConversion[max][waveType] += angularBlastWaveConversion[max][waveType] + power * delta;
+        if (angularBlastWaveConversion[max][waveType] > 100) {
+            angularBlastWaveConversion[max][waveType] = 0;
+            activeAngularWaves[max] = waveType;
         }
     }
 
@@ -301,6 +356,9 @@ public abstract class MixinProcessExplosion {
         if (dist > 100) {
             dist = 100;
         }
+        if (dist > power) {
+            dist = (int)Math.round(power);
+        }
         if (dist <= 0 || power <= 0 || posVec.y < 0 || posVec.y > 255) {
             return totalResist;
         }
@@ -326,8 +384,24 @@ public abstract class MixinProcessExplosion {
 
             r = block.getExplosionResistance(null);
 
+            if (activeWave.converters.containsKey(state)) {
+                Converter converter = activeWave.converters.get(state);
+                addBlastWaveConversionFactor(getRadialAngle(posVec), converter.output.id, converter.power);
+            }
+
+
             if (effectivePower >= r) {
-                destroyedCache.add(iPos);
+                //Add deposition to depositions list
+                if ((dist == 1 || power < (r / radius) / travel) && traceDir == -1 && !world.isAirBlock(pos.down()) ) {
+                    dist = 0;
+                    //destroyedCache.remove(iPos);
+                    depositionPosition[activeWaveID].add(iPos);
+                    blocksToUpdate.add(iPos);
+                    scannedCache.add(iPos);
+                } else {
+                    destroyedCache.add(iPos);
+                }
+
             }
             else if (mat == Material.WATER || mat == Material.LAVA) {
                 if (effectivePower > 5) {
@@ -345,6 +419,11 @@ public abstract class MixinProcessExplosion {
                 scannedCache.add(iPos);
             }
 
+            if (activeWave.reactions.containsKey(state)) {
+                reactionPosition[activeWaveID].add(iPos);
+                destroyedCache.remove(iPos);
+            }
+
             if (r > 1000) {
                 r = 1000;
             }
@@ -358,14 +437,7 @@ public abstract class MixinProcessExplosion {
         totalResist += r;
         power -= r;
 
-        //Add deposition to depositions list
-        if (dist == 1 && traceDir == -1 && !world.isAirBlock(pos.down())) {
-            dist = 0;
-            destroyedCache.remove(iPos);
-            depositionPosition[activeAngularWaves[activeWave]].add(iPos);
-            blocksToUpdate.add(iPos);
-            scannedCache.add(iPos);
-        }
+
 
         posVec.add(0, traceDir, 0);
         return trace(posVec, power, dist, traceDir, totalResist, travel);
@@ -397,6 +469,17 @@ public abstract class MixinProcessExplosion {
         ExplosionHelper removalHelper = new ExplosionHelper(world, origin.getPos(), shortPos);
         int i = 0;
 
+        //process Reactions
+        for (int wave = 0; wave < AlchemyRegistry.numWaves(); wave++) {
+            BlastWave blastWave = AlchemyRegistry.waveTypes.get(wave);
+            for (Integer pos : reactionPosition[wave]) {
+                Reaction reaction = blastWave.reactions.get(world.getBlockState(shortPos.getActualPos(pos)));
+                if (reaction != null) {
+                    world.setBlockState(shortPos.getActualPos(pos), reaction.output);
+                }
+            }
+        }
+
         removalHelper.setBlocksForRemoval(destroyedBlocks);
 
         LogHelper.stopTimer();
@@ -405,7 +488,7 @@ public abstract class MixinProcessExplosion {
         //process depositions
         for (int wave = 0; wave < AlchemyRegistry.numWaves(); wave++) {
             for (Integer pos : depositionPosition[wave]) {
-                world.setBlockState(shortPos.getActualPos(pos), AlchemyRegistry.waveTypes.get(i).getDeposition(world.rand));
+                world.setBlockState(shortPos.getActualPos(pos), AlchemyRegistry.waveTypes.get(wave).getDeposition(world.rand));
             }
         }
 

@@ -12,6 +12,7 @@ public class AlchemyRegistry {
     public final static BlastWave CHAOTICBLASTWAVE = new BlastWave("Chaotic", true);
     public static void registerBlastWave(BlastWave blastWave) {
         waveTypes.add(blastWave);
+        blastWave.id = waveTypes.size()-1;
     }
 
     public static void registerConverter(Converter converter) {

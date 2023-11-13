@@ -1,18 +1,17 @@
 package com.cleanroommc.draconicalchemy.alchemy;
 
-import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 
 public class Reaction {
-    public Block reactant;
+    public IBlockState input;
     public BlastWave waveType;
-    public Block result;
+    public IBlockState output;
     public int powerRequired;
 
-    public Reaction(Block reactant, BlastWave waveType, Block result, int powerRequired) {
-        this.reactant = reactant;
+    public Reaction(IBlockState reactant, BlastWave waveType, IBlockState result, int powerRequired) {
+        this.input = reactant;
         this.waveType = waveType;
-        this.result = result;
+        this.output = result;
         this.powerRequired = powerRequired;
     }
 }
