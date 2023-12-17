@@ -35,6 +35,13 @@ public class RandomCollection<E> {
         updated = true;
     }
 
+    public int getTotal() {
+        if (!updated) {
+            update();
+        }
+        return total;
+    }
+
     public E next(Random random) {
         try {
             if (!updated) {
@@ -45,6 +52,13 @@ public class RandomCollection<E> {
         } catch (Exception e) {
             return null;
         }
+    }
 
+    public Map<E, Integer> getMap() {
+        return items;
+    }
+
+    public Integer getWeight(E key) {
+        return items.getOrDefault(key, 0);
     }
 }

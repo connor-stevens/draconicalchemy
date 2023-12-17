@@ -134,8 +134,9 @@ dependencies {
         // at runtime, use the full JEI jar
     runtimeOnly rfg.deobf("mezz.jei:jei_1.12.2:4.16.1.302")
 
-    compileOnly "CraftTweaker2:CraftTweaker2-API:4.1.8.9"
-    runtimeOnly "CraftTweaker2:CraftTweaker2-MC1120-Main:1.12-4.1.20.695"
+    //compileOnly rfg.deobf("CraftTweaker2:CraftTweaker2-API:4.1.8.9")
+    implementation "CraftTweaker2:CraftTweaker2-MC1120-Main:1.12-4.1.20.695"
+    //implementation rfg.deobf("CraftTweaker2:ZenScript:4.1.20.695")
 
 
     if (project.use_mixins.toBoolean()) {

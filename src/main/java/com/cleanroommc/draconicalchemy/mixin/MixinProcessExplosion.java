@@ -12,9 +12,8 @@ import com.brandon3055.draconicevolution.network.PacketExplosionFX;
 import com.brandon3055.draconicevolution.utils.LogHelper;
 import com.cleanroommc.draconicalchemy.alchemy.AlchemyRegistry;
 import com.cleanroommc.draconicalchemy.alchemy.BlastWave;
-import com.cleanroommc.draconicalchemy.alchemy.Converter;
-import com.cleanroommc.draconicalchemy.alchemy.Reaction;
-import com.cleanroommc.draconicalchemy.util.Pair;
+import com.cleanroommc.draconicalchemy.alchemy.Polarisation;
+import com.cleanroommc.draconicalchemy.alchemy.Transmutation;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLiquid;
@@ -45,7 +44,7 @@ import java.util.List;
 public abstract class MixinProcessExplosion {
 
     @Shadow
-    public static DamageSource fusionExplosion = new DamageSource("damage.de.fusionExplode").setExplosion().setDamageBypassesArmor().setDamageIsAbsolute();
+    public static DamageSource fusionExplosion;
 
     /**
      * The origin of the explosion.
@@ -110,9 +109,7 @@ public abstract class MixinProcessExplosion {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     protected void overrideFluid(BlockPos origin, int radius, WorldServer world, int minimumDelayTime, CallbackInfo ci) {
-        //angularResistance = null;
-        //angularResistance = new double[121];
-        minimumDelay = 0;
+        LogHelper.dev("Constructor successful");
         angularBlastWaveConversion = new int[121][AlchemyRegistry.numWaves()];
         blastWaveConversionBuffer = new int[AlchemyRegistry.numWaves()];
         depositionPosition = new HashSet[AlchemyRegistry.numWaves()];
@@ -126,10 +123,11 @@ public abstract class MixinProcessExplosion {
         activeAngularWaves = new int[121];
     }
     /**
-     * @author
-     * @reason
+     * @author yodamax
+     * @reason Used for testing, to avoid time delay
      */
-    @Overwrite
+    //@Overwrite
+    @Shadow
     public void updateProcess() {
         server.currentTime = MinecraftServer.getCurrentTimeMillis();
         if (startTime == -1) {
@@ -239,15 +237,16 @@ public abstract class MixinProcessExplosion {
 
     //region Math Stuff
 
-    private void recalcResist() {
-        double total = 0;
-        for (double resist : angularResistance) {
-            total += resist;
-        }
+    @Shadow
+    private void recalcResist() {};
 
-        meanResistance = total / angularResistance.length;
-    }
+    @Shadow
+    public abstract double getRadialResistance(double radialPos);
 
+    @Shadow
+    public abstract void addRadialResistance(double radialPos, double power);
+
+    //Experiment that that was never actually used.
     private void smoothResist(int range) {
         double[] smoothing = new double[121];
         for (int i = 0; i < 121; i++) {
@@ -261,15 +260,8 @@ public abstract class MixinProcessExplosion {
         }
     }
 
-    public double getRadialAngle(Vec3D pos) {
-        double theta = Math.atan2(pos.x - origin.x, origin.z - pos.z);
-
-        if (theta < 0.0) {
-            theta += Math.PI * 2;
-        }
-
-        return ((theta / (Math.PI * 2)) * (double) angularResistance.length);
-    }
+    @Shadow
+    public abstract double getRadialAngle(Vec3D pos);
 
     //Get the index of the active blast wave
     public int getActiveBlastWave(double radialPos) {
@@ -315,41 +307,10 @@ public abstract class MixinProcessExplosion {
         }
     }
 
-    public double getRadialResistance(double radialPos) {
-        int min = MathHelper.floor(radialPos);
-        if (min >= angularResistance.length) {
-            min -= angularResistance.length;
-        }
-        int max = MathHelper.ceil(radialPos);
-        if (max >= angularResistance.length) {
-            max -= angularResistance.length;
-        }
-
-        double delta = radialPos - min;
-
-        return (angularResistance[min] * (1 - delta)) + (angularResistance[max] * delta);
-    }
-
-    public void addRadialResistance(double radialPos, double power) {
-        int min = MathHelper.floor(radialPos);
-        if (min >= angularResistance.length) {
-            min -= angularResistance.length;
-        }
-
-        int max = MathHelper.ceil(radialPos);
-        if (max >= angularResistance.length) {
-            max -= angularResistance.length;
-        }
-
-        double delta = radialPos - min;
-        angularResistance[min] += power * (1 - delta);
-        angularResistance[max] += power * delta;
-    }
-
     //endregion
     /**
-     * @author
-     * @reason
+     * @author Yodamax
+     * @reason Addon alters behaviour of Draconic Evolution explosions.
      */
     @Overwrite
     private double trace(Vec3D posVec, double power, int dist, int traceDir, double totalResist, int travel) {
@@ -385,8 +346,8 @@ public abstract class MixinProcessExplosion {
             r = block.getExplosionResistance(null);
 
             if (activeWave.converters.containsKey(state)) {
-                Converter converter = activeWave.converters.get(state);
-                addBlastWaveConversionFactor(getRadialAngle(posVec), converter.output.id, converter.power);
+                Polarisation polarisation = activeWave.converters.get(state);
+                addBlastWaveConversionFactor(getRadialAngle(posVec), polarisation.output.id, polarisation.power);
             }
 
 
@@ -424,6 +385,10 @@ public abstract class MixinProcessExplosion {
                 destroyedCache.remove(iPos);
             }
 
+            if (activeWave.immunities.contains(state)) {
+                destroyedCache.remove(iPos);
+            }
+
             if (r > 1000) {
                 r = 1000;
             }
@@ -443,17 +408,14 @@ public abstract class MixinProcessExplosion {
         return trace(posVec, power, dist, traceDir, totalResist, travel);
     }
 
-    /**
-     * @return true if explosion calculation is complete.
-     */
-    public boolean isCalculationComplete() {
-        return calculationComplete;
-    }
+
+    @Shadow
+    public abstract boolean isCalculationComplete();
+
 
     /**
-     * Call this once the explosion calculation has completed to manually detonate.
-     *
-     * @return false if calculation is not yet complete or detonation has already occurred.
+     * @author Yodamax
+     * @reason Overwrite detonation behaviour to introduce new behaviour.
      */
     @Overwrite
     public boolean detonate() {
@@ -473,9 +435,9 @@ public abstract class MixinProcessExplosion {
         for (int wave = 0; wave < AlchemyRegistry.numWaves(); wave++) {
             BlastWave blastWave = AlchemyRegistry.waveTypes.get(wave);
             for (Integer pos : reactionPosition[wave]) {
-                Reaction reaction = blastWave.reactions.get(world.getBlockState(shortPos.getActualPos(pos)));
-                if (reaction != null) {
-                    world.setBlockState(shortPos.getActualPos(pos), reaction.output);
+                Transmutation transmutation = blastWave.reactions.get(world.getBlockState(shortPos.getActualPos(pos)));
+                if (transmutation != null) {
+                    world.setBlockState(shortPos.getActualPos(pos), transmutation.output);
                 }
             }
         }

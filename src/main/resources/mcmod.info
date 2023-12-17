@@ -2,15 +2,15 @@
 {
   "modid": "draconicalchemy",
   "name": "Draconic Alchemy",
-  "description": "Addon to Draconic Evolution that offers new in world crafting mechanics to pack makers",
+  "description": "An Addon for Draconic Evolution that offers new in world crafting mechanics to pack makers",
   "version": "${version}",
   "mcversion": "${mcversion}",
   "url": "",
   "updateUrl": "",
-  "authorList": ["CleanroomMC"],
-  "credits": "Authors of this project",
+  "authorList": ["Yodamax"],
+  "credits": "Thanks to Sainagh (MeatBallCraft) for the idea and help testing.",
   "logoFile": "",
   "screenshots": [],
-  "dependencies": []
+  "dependencies": ["draconicevolution", "crafttweaker"]
 }
 ]
