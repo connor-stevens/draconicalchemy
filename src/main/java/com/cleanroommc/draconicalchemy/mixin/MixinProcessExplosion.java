@@ -385,7 +385,7 @@ public abstract class MixinProcessExplosion {
                 destroyedCache.remove(iPos);
             }
 
-            if (activeWave.immunities.contains(state)) {
+            if (activeWave.immunities.contains(state) || !activeWave.destructive) {
                 destroyedCache.remove(iPos);
             }
 
