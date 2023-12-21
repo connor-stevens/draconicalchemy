@@ -14,6 +14,7 @@ import com.cleanroommc.draconicalchemy.alchemy.AlchemyRegistry;
 import com.cleanroommc.draconicalchemy.alchemy.BlastWave;
 import com.cleanroommc.draconicalchemy.alchemy.Polarisation;
 import com.cleanroommc.draconicalchemy.alchemy.Transmutation;
+import com.cleanroommc.draconicalchemy.util.IAimable;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockLiquid;
@@ -22,16 +23,14 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.DamageSource;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.fluids.IFluidBlock;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
-import org.spongepowered.asm.mixin.Final;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.*;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -41,7 +40,9 @@ import java.util.LinkedList;
 import java.util.List;
 
 @Mixin(value = ProcessExplosion.class, remap = false)
-public abstract class MixinProcessExplosion {
+public abstract class MixinProcessExplosion implements IAimable {
+
+    final double STOPPINGRESIST = 10;
 
     @Shadow
     public static DamageSource fusionExplosion;
@@ -102,7 +103,8 @@ public abstract class MixinProcessExplosion {
     public HashSet<Integer>[] reactionPosition;
     private int[][] angularBlastWaveConversion;
     private int[] blastWaveConversionBuffer;
-    private int[] activeAngularWaves;
+    public int[] activeAngularWaves;
+
     private int activeWaveID;
 
     private BlastWave activeWave;
@@ -122,6 +124,8 @@ public abstract class MixinProcessExplosion {
         }
         activeAngularWaves = new int[121];
     }
+
+
     /**
      * @author yodamax
      * @reason Used for testing, to avoid time delay
@@ -233,6 +237,35 @@ public abstract class MixinProcessExplosion {
             calculationComplete = true;
         }
     }
+
+    public void directBlast(EnumFacing facing, float accuracy) {
+        directBlast(facing.getHorizontalAngle(), accuracy);
+    }
+
+
+    public void directBlast(float angle, float accuracy) {
+        angle += Math.PI;
+        if (angle > Math.PI * 2) {
+            angle -= Math.PI * 2;
+        }
+
+        for (int i = 0; i < angularResistance.length; i++) {
+            double angleI = ((i * (Math.PI * 2 / angularResistance.length)) + Math.PI * 2);
+            if (angleI > Math.PI * 2) {
+                angleI -= Math.PI * 2;
+            }
+            double result = Math.abs(angleI - angle);
+            angularResistance[i] = result * STOPPINGRESIST;
+        }
+        LogHelper.dev("Blast Directed");
+    }
+
+    public void setBlastWave(BlastWave blastWave) {
+        for (int i = 0; i < activeAngularWaves.length; i++) {
+            activeAngularWaves[i] = blastWave.id;
+        }
+    }
+
 
 
     //region Math Stuff

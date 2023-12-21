@@ -1,5 +1,10 @@
 //importing and declaring variables.
 import mods.draconicalchemy.BlastWave;
+import mods.draconicalchemy.DetonationManager;
+import crafttweaker.event.PlayerInteractEvent;
+import crafttweaker.events.IEventManager;
+import crafttweaker.event.PlayerBonemealEvent;
+
 var default as BlastWave;
 var test as BlastWave;
 
@@ -45,3 +50,9 @@ test.addTransmutation(<blockstate:minecraft:log>.matchBlock(), 1, <blockstate:mi
 
 //Immunities can be added for specific blockstates
 test.addImmunity(<blockstate:minecraft:leaves>.matchBlock());
+
+
+events.onPlayerBonemeal(function(event as PlayerBonemealEvent){
+    print("work?");
+    DetonationManager.detonate(event.world, test, event.blockPos, 50);
+});
