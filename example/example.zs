@@ -54,5 +54,5 @@ test.addImmunity(<blockstate:minecraft:leaves>.matchBlock());
 
 events.onPlayerBonemeal(function(event as PlayerBonemealEvent){
     print("work?");
-    DetonationManager.detonate(event.world, test, event.blockPos, 50);
+    DetonationManager.detonate(event.world, test, event.position, 50, event.player.rotationYaw);
 });
